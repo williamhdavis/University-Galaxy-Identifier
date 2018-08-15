@@ -1,0 +1,231 @@
+#!/usr/bin/env python
+
+"""
+///////////////////////////////////////////////////////////////////////////
+//  galaxy  --  A python program to determine galaxy types in images.    //
+///////////////////////////////////////////////////////////////////////////
+
+Purpose:
+This program is used to determine if an image provided contains either a
+spiral or ellipse type galaxy. To do so it creates two masked images, one
+based on the colour blue and the second based on the colour red.
+
+For each, the appropriate colour channel is then scanned, with all pixels
+within the centre region of the image that have a value greater than a
+changeable minimum brightness being counted.
+
+If there are more counted pixels in the red mask or the same in both
+masks then the galaxy is declared an ellipse. If the blue mask has more
+counted pixels, then the galaxy is declared a spiral.
+
+Usage:
+./galaxy <image>    OR    python galaxy <image>
+Where <image> is an image file containing a galaxy that is centred in the
+image and is either an ellipse galaxy or a spiral galaxy.
+
+Output:
+spiral    OR    ellipse
+Depending on the file given as an input and the programs determination on
+the galaxy type found.
+
+Restrictions:
+The usage of this program relies on the galaxy being in the centre of the
+input image. It relies on only a single image being provided at a time and
+generates an error message if this is not the case.
+
+///////////////////////////////////////////////////////////////////////////
+
+Report:
+In testing my developed solution to the problem of differentiating galaxy
+types based on the colour of the stars contained within, I have managed to
+achieve an overall accuracy of 72%. This is made up of 298 true positives
+where ellipse galaxies were correctly labelled as ellipse galaxies; 279
+true positives where spiral galaxies were correctly labelled as spiral
+galaxies; 102 false positives where ellipse galaxies were incorrectly
+labelled as spiral galaxies; and 121 false positives where spiral galaxies
+were incorrectly labelled as ellipse galaxies.
+
+Based on these values, I feel that my algorithm for determining is fairly
+effective with room for further improvement and refinement. Currently, my
+algorithm is based on the idea of masking the input image into two separate
+images such that each only contain pixels with colours within specific
+values. The pixels that remain that have a brightness over a certain value
+are then counted and depending on the number of each counted, the type of
+galaxy is determined.
+
+This algorithm can be tweaked by adjusting the masking limits to better
+refine the selections being made. As part of testing, these values were
+changed to attempt to find the optimum values. Of the tried values, the
+current ones provided the best overall accuracy, however better values
+could exist. Currently this algorithm relies on the galaxy being centred on
+the image and does not take into account the galaxies size, instead taking
+a fixed region of the image. While this speeds up the analysis, if the
+algorithm was tweaked to detect the size of the galaxy and its position in
+the image it could be possible to improve the accuracy.
+
+However, in any attempt to increase the algorithms accuracy for a particular
+type of galaxy, it is likely that the other types accuracy will be reduced
+as increasing the number of true positives usually increases the number of
+false positives as well. In fine tuning my masking values, I encountered
+this directly as a previous set of values gave a higher number of true
+positives for ellipse galaxies but a higher number of false positives as
+well, reducing the number of true positive spiral galaxies. Due to this, a
+balance has to be met and I believe that my current implementation achieves
+a good balance.
+
+In further analysing this algorithms accuracy, it has been directly compared
+to the "agal" solutions result using McNemar's test. In doing so, my
+algorithm achieved a Z-score of 9.19 for ellipse detection and a Z-score
+of -0.00 for spiral galaxies. Based on these results it can be determined
+that my algorithm is largely more accurate at identifying ellipse galaxies
+while performing similarly in identifying spiral galaxies. Meaning that
+overall, my algorithm outperforms the algorithm used for the "agal" solution.
+
+Overall, I feel my solution achieves the intended result and functions as
+expected. Due to interfering elements on some of the images such as solid 
+colour lines and lens flares, a simple algorithm such as the one used would
+not be able to achieve 100% accuracy. As desired, the program runs bug free
+as long as the arguments used are correct. In the case they are not, the
+program closes and informs the user of the mistake so it can be corrected.
+
+///////////////////////////////////////////////////////////////////////////
+
+"""
+
+# Required libraries for the correct functionality of galaxy
+import cv2, sys, math, numpy
+
+# __LOWRED defines the lowest shade of red to be used for masking as a HSV value.
+__LOWRED = [0, 63, 86]
+# __HIGHRED defines the highest shade of red to be used for masking as a HSV value.
+__HIGHRED = [355, 100, 100]
+# __REDCHANNEL defines the channel in the image that contains the red BGR data.
+__REDCHANNEL = 2
+	
+# __LOWBLUE defines the lowest shade of blue to be used for masking as a HSV value.
+__LOWBLUE = [93, 33, 35]
+# __HIGHBLUE defines the highest shade of blue to be used for masking as a HSV value.
+__HIGHBLUE = [166, 100, 100]
+# __BLUECHANNEL defines the channel in the image that contains the blue BRG data.
+__BLUECHANNEL = 0
+
+# __CROPRATIO defines the number of sections the image should be split into on both axis.
+__CROPRATIO = 3
+
+# __MINIMUMBRIGHTNESS defines the brightness a pixel must be above to be counted as lit.
+__MINIMUMBRIGHTNESS = 50
+
+
+"""
+The "galaxy" class contains most of the functionality required to analyse a
+		selected image.
+"""
+class galaxy:
+	"""
+	"__init__" is used to prepare a galaxy image for analysis.
+	@param file - String. The file path of the image to be analysed.
+	"""
+	def __init__(self, file):
+		self.im = cv2.imread(file)
+		self.hsv = cv2.cvtColor(self.im, cv2.COLOR_BGR2HSV)
+
+	"""
+	"maskedImage" is used to produce a masked version of the open image based
+		on colour ranges.
+	@param low - Array(Integer). An array containing a HSV value that is the
+		lower colour bound.
+	@param high - Array(Integer). An array containing a HSV value that is the
+		higher colour bound.
+	@returns - Image. A masked image with colours only between "low" and "high".
+	"""
+	def maskedImage(self, low, high):
+		lower = numpy.array(low)
+		higher = numpy.array(high)
+		mask = cv2.inRange(self.hsv, lower, higher)
+		imOut = cv2.bitwise_and(self.im, self.im, mask = mask)
+		return imOut
+		
+	"""
+	"bounds" is used to get the x and y limits that define the centre section
+		of the image.
+	@param split - Integer. The number of sections to divide the image into
+		on each axis.
+	@returns - Tuple(Integer). The four values that define the centre section
+		of the image.
+	"""
+	def bounds(self, split):
+		# To have a centre section, there must be an odd number of sections on
+		#		each axis.
+		if(split % 2 == 0):
+			split += 1
+		ny, nx, nc = self.im.shape
+		tx = nx / split
+		ty = ny / split
+		xStart = int(math.floor(tx * math.floor(split / 2.0)))
+		yStart = int(math.floor(ty * math.floor(split / 2.0)))
+		xLimit = int(math.ceil(tx * math.ceil(split / 2.0)))
+		yLimit = int(math.ceil(ty * math.ceil(split / 2.0)))
+		return xStart, yStart, xLimit, yLimit
+		
+	"""
+	"countPixels" is used to count the number of pixels in a specific channel 
+		of an image that have a brightness above a specified value.
+	@param image - Image. The image to count pixels from.
+	@param channel - Integer. The channel to count pixels in.
+	@param minimum - Integer. The minimum brightness a pixel must be above to
+		be counted.
+	@param xStart - Integer. The x value of the start coordinate for the centre
+		section of the image.
+	@param yStart - Integer. The y value of the start coordinate for the centre
+		section of the image.
+	@param xLimit - Integer. The x value of the end coordinate for the centre
+		section of the image.
+	@param xLimit - Integer. The y value of the end coordinate for the centre
+		section of the image.
+	"""
+	def countPixels(self, image, channel, minimum, xStart, yStart, xLimit, yLimit):
+		count = 0
+		y = yStart
+		while(y <= yLimit):
+			x = xStart
+			while(x <= xLimit):
+				if(image[y, x, channel] > minimum):
+					count += 1
+				x += 1
+			y += 1
+		return count
+"""
+End of "galaxy" class.
+"""
+
+# Ensure that there is exactly one file specified for analysis. Abort if this is
+#	not the case.
+if(len(sys.argv) != 2):
+	print("Usage:", sys.argv[0], "<image>")
+	sys.exit(1)
+
+# Open the image specified and create masked versions for reds and blues.
+gal = galaxy(sys.argv[1])
+red = gal.maskedImage(__LOWRED, __HIGHRED)
+blue = gal.maskedImage(__LOWBLUE, __HIGHBLUE)
+
+# Get the bounds for the area of the image to be analysed.
+x1, y1, x2, y2  = gal.bounds(__CROPRATIO)
+
+# Count the number of pixels that are bright enough in the appropriate channel for both
+#	the blue and red masked images.
+redCount = gal.countPixels(red, __REDCHANNEL, __MINIMUMBRIGHTNESS, x1, y1, x2, y2)
+blueCount = gal.countPixels(blue, __BLUECHANNEL, __MINIMUMBRIGHTNESS, x1, y1, x2, y2)
+
+# If there are more blue pixels than red, declare the galaxy a spiral galaxy. Otherwise
+#	declare it an ellipse galaxy.
+if(blueCount > redCount):
+	print("spiral")
+else:
+	print("ellipse")
+
+"""
+///////////////////////////////////////////////////////////////////////////
+//  galaxy  --  End of galaxy.                                           //
+///////////////////////////////////////////////////////////////////////////
+"""
